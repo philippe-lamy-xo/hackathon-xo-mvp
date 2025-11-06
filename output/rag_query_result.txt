@@ -1,0 +1,23 @@
+QUERY:
+I have a train with journey key = 100 and load factor = 0.8 and another train with journey key = 200 and load factor = 0.5, which one is the best and which one is the worst and why
+
+RETRIEVED_SOURCES:
+data/Appia.txt
+
+ANSWER:
+Best journey: 100 (higher load factor = better utilization). Worst journey: 200 (lower load factor = poorer utilization).
+Reasoning: A higher load factor indicates more seats occupied relative to capacity, which typically reflects better revenue and efficiency unless other constraints apply.
+
+RETRIEVAL_SNIPPETS:
+--- Doc 1 | score=1.2469 | source=data/Appia.txt
+Adjust the strategy as conditions change Instructions Path: From the left sidebar in Appia, Select Strategies. Select Create Strategy and "Competition Matching" from the matrix list. 761In the Linked Departure Preconditions, enter the Departure Number(s) of trains that will have conditions. 2Set the Condition(s) for the Linked Departures. For example, if Departure Number 263, an afternoon Departur
+--- Doc 2 | score=1.2528 | source=data/Appia.txt
+Booking Period Overview Load Factor Period Overview Revenue Period Overview Obs Fcst Fnl Hist Obs Hist Fnl Hist Delta = Observed Bookings vs Historical Observed Bookings Fcst Fnl Hist Delta = Forecast Final Bookings vs Historical Final Bookings Obs Fcst Fnl Hist Obs Hist Fnl Hist Delta = Observed Load Factor vs Historical Observed Load Factor Fcst Fnl Hist Delta = Forecast Final Load Factor vs His
+--- Doc 3 | score=1.2595 | source=data/Appia.txt
+Create tailored strategies: First, set your targeted position in relation to that of your competitor(s) by using the Min Comp Cab Fare or Avg Comp Cab Fare, Then define to what extent the Optimizer can reopen or close control classes to match the target. The optimizer will adjust the Min Cab Avl Fare to the public price of the Cabin-control class that matches your target. Linked Departure Precondi
+--- Doc 4 | score=1.2618 | source=data/Appia.txt
+crossed an increasing or decreasing threshold level. Load factor value of the Leg with the highest load factor RASKCondition "from to" (RASK range)All Departures included in a range of RASK between a minimum and maximum level or having crossed an increasing or decreasing threshold level. Observed RASK on the reference historical Departure, at same DBD Rec Cab Lwst Avl ClsMulti-select Lists for Cab
+--- Doc 5 | score=1.2625 | source=data/Appia.txt
+Non Reservable Bookings: Bkg NR: Observed sum of individual and group bookings, for non-reservable control classes Revenue: Rev: Observed sum of individual and group booking revenues Load Factor: LF: Departure load factor for the sum of individual and group bookings, for both reservable and non- reservable control classes Observed Reservable Load Factor: LF R: Departure load factor for the sum of 
+--- Doc 6 | score=1.2826 | source=data/Appia.txt
+Cumulative Load Factor. Remarks Cumulative Calculation: Observed Load Factor = The sum of Revenue Passenger Kilometers (RPKs) divided by the sum of Available Seat Kilometers (ASKs) for a given Departure Observed Cancellation Load Factor = The sum of Cancellation Passenger Kilometers (CPKs) divided by the sum of ASKS for a given Departure Incremental Calculation: Observed Load Factor = The sum of R

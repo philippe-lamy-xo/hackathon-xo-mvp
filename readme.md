@@ -25,241 +25,154 @@ readme.md                 # This file
 ## Installation
 
 ### 1. Create a Virtual Environment
+## TPAD (Train Performance Alerting Dashboard)
+
+This repository contains the TPAD (Train Performance Alerting Dashboard) hackathon prototype. The goal of TPAD is to extract structured journey information from free-form text, ingest supporting documents into a local RAG index, and provide an agent and small demo UI that outputs structured JSON suitable for dashboards or downstream automation.
+
+The rest of this README focuses exclusively on what we built during the hackathon, how it works, and how to use the agent prompt (with examples).
+
+### What we built (high level)
+
+- `tools/journey_tools.py` — a deterministic-first extractor that returns a strict JSON string with fields: `journey_id`, `score`, `reason`, `solution`, `confidence`, and `score_numeric`. The extractor uses fast heuristics (regex/key:value), a conservative fallback, and an optional LLM refinement helper (`refine_extraction_with_llm`) for low-confidence cases.
+- `tools/rag_tools.py` — a retrieval helper that opens the Chroma vector store (persisted in `chroma/`), performs similarity searches, and formats the retrieved snippets for the agent context.
+- `tools/tools.py` — registry of tools wired into the agent (including the extractor and retrieval tool).
+- `main.py` — runtime entrypoint and `get_agent()` factory that builds the RAG-aware agent on demand (avoids import-time side effects).
+- `ingest.py` — ingestion script to split documents under `data/`, compute embeddings with the local HF model configured in `get_embedding_function.py`, and persist them to Chroma in `chroma/`.
+- `scripts/rag_query.py` — programmatic runner that queries the agent over a list of trains (JSON input) and writes structured JSON plus a human-readable result to `output/`.
+- `scripts/extract_from_csv.py` — batch CSV -> JSONL extractor that uses `tools/journey_tools.extract_journey_info`.
+- `scripts/server.py` + `public/journey_dashboard_demo.html` — a tiny HTTP server and static demo UI that serves `output/journeys.jsonl` at `/api/journeys` and visualizes top/bottom journeys.
+- `scripts/start_server.sh`, `scripts/stop_server.sh`, `scripts/status_server.sh` — demo server management scripts.
+- `tests/test_journey_tools.py` and `scripts/run_unit_tests.py` — small unit tests and a test runner for the extractor heuristics and mocked LLM path.
+
+### Output schema
+
+All extractor outputs and agent-produced structured results follow a compact JSON shape (returned as a JSON string by the extractor):
+
+{
+   "journey_id": string|null,
+   "score": string|null,
+   "reason": string|null,
+   "solution": string|null,
+   "confidence": "heuristic"|"low"|"llm",
+   "score_numeric": number|null
+}
+
+The agent (`scripts/rag_query.py` or `main.py` when invoked programmatically) wraps this and produces an overall result describing the best/worst journeys and supporting citations.
+
+### How the extractor works (short explanation)
+
+1. Heuristic pass: fast regex/key:value detection for lines like `JourneyId: 12345`, `Score: -3.4`, `Reason: ...`, `Solution: ...`. If the heuristic finds meaningful values, it returns `confidence: "heuristic"`.
+2. Conservative fallback: if heuristics fail, the extractor searches for short spans near keywords (`score`, `reason`, `solution`) and extracts short sentences as candidate values. The result is marked `confidence: "low"`.
+3. Optional LLM refinement: when `llm_predict` callable is provided and the result is `confidence: "low"`, the extractor calls `refine_extraction_with_llm` which prompts the LLM to return strict JSON. The helper attempts to parse and normalize the returned JSON; if successful, `confidence` becomes `"llm"`.
+
+This design minimizes hallucinations by preferring deterministic heuristics and only calling an LLM when necessary.
+
+### How to use the agent prompt — examples
+
+Below are pragmatic examples showing how to call the agent and the extractor via CLI and programmatically. Replace the placeholder values (API keys, etc.) as needed.
+
+1) CLI: quick RAG question (uses `main.py`)
 
 ```bash
-python -m venv .venv
+python3 main.py "I have a train with journey key = 100 and load factor = 0.8 and another train with journey key = 200 and load factor = 0.5, which one is the best and which one is the worst and why"
 ```
 
-### 2. Activate the Virtual Environment
+Expected behavior: `main.py` will construct the agent (via `get_agent()`), run the query using the RAG retrieval for context, and print a human-readable answer plus (optionally) a JSON file in `output/` if configured. The agent chooses the best/worst train by comparing `load_factor` (higher is generally worse for load; adjust your scoring rules in `scripts/rag_query.py` or the agent prompt if you want a different behavior).
 
-**Linux / macOS:**
+2) Programmatic: use `scripts/rag_query.py` on sample input
+
+Input example (create `output/sample_trains.json`):
+
+```json
+[
+   {"journey_key": 100, "load_factor": 0.8, "description": "Journey 100 late due to congestion"},
+   {"journey_key": 200, "load_factor": 0.5, "description": "Journey 200 running normally"}
+]
+```
+
+Run the query runner:
 
 ```bash
-source .venv/bin/activate
+python3 scripts/rag_query.py --input output/sample_trains.json --output output/rag_agent_result.json
 ```
 
-**Windows:**
+This writes structured JSON to `output/rag_agent_result.json` and a human-readable summary to `output/rag_agent_result.txt`.
 
-```bash
-./.venv/Scripts/activate
-```
-
-### 3. Install dependencies
-
-Project dependencies are listed in the requirements.txt file.
-
-To install them, run the following command:
-
-```bash
-pip install -r requirements.txt
-```
-
-If needed, you can add new dependencies to the file and re-run the command to install them.
-
-### 4. Create a .env file
-
-```.env
-AZURE_OPENAI_ENDPOINT=
-AZURE_OPENAI_API_KEY=
-APPIA5_BASE_URL=
-APPIA5_API_TOKEN=
-```
-
-## Ingesting Data
-
-Place your documents in the `data/` folder (create it if it does not already exist), then run:
-
-```bash
-python ingest.py --reset
-```
-
-- `--reset` clears the database before re-ingesting.
-- Without `--reset`, only new documents will be added.
-
----
-
-## Asking Questions
-
-Once data is ingested, ask a question:
-
-```bash
-python main.py "What is Appia?"
-```
-
----
-
-## Customization
-
-- An LLM bases itself on two things to generate an answer:
-
-  1. **The Context** → the information you provide to the model beforehand (documents ingested, split into chunks, transformed into embeddings and stored in a vector database, or conversation history). This is the knowledge base the model can draw from. \
-     In this project, this is done via the _ingestion_ process. See [Ingesting Data](#ingesting-data)
-
-  2. **The Prompt** → the actual question or instruction you send to the model at query time. This guides how the model should use the context (e.g., “Summarize this”, “Answer as a lawyer”, “Translate into Italian”). \
-     In this project, the prompt is stored in the `PROMPT_TEMPLATE` variable.
-
-- Read documentation: https://python.langchain.com/docs/integrations/chat/azure_chat_openai/
-
-- Change embedding model in get_embedding_function.py:
-
-```python
-HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-```
-
-- Adjust chunk size in ingest.py for more/less context.
-
----
-
-## Resources
-
-### Rag/Database
-
-- [LangChain Document Loaders](https://python.langchain.com/docs/integrations/document_loaders/)
-- [Chroma Vector DB](https://docs.trychroma.com/)
-
-### Tool calling
-
-- [Quickstart](https://docs.langchain.com/oss/python/langchain/quickstart)
-- [Tools](https://docs.langchain.com/oss/python/langchain/tools)
-- [Agent](https://docs.langchain.com/oss/python/langchain/agents)
-- [Streaming](https://docs.langchain.com/oss/python/langchain/streaming)
-- [OpenAi tools guide](https://platform.openai.com/docs/guides/tools?tool-type=remote-mcp)
-
----
-
-## RAG Diagram
-
-![Architecture Diagram](./public/diagram.svg "Architecture Diagram")
-
-## Tool call Diagram
-
-![Architecture Diagram](./public/tool_calls.svg "Tool call Diagram")
-
-## TPAD (Train Performance Alerting Dashboard) — Hackathon additions
-
-This repository was extended during the hackathon to add a small prototype that:
-- Extracts structured journey information (journey_id, score, reason, solution) from free-form text.
-- Provides a lightweight RAG-aware tool and optional LLM refinement helper.
-- Adds CLI scripts for batch CSV extraction and a static demo dashboard with a small local HTTP server and management scripts.
-
-The following sections explain what was added, how to run it, and what each file does.
-
-### What I added (high level)
-- `tools/journey_tools.py` — heuristic-first extractor + optional LangChain `@tool` wrapper and `refine_extraction_with_llm` helper.
-- `scripts/demo_extract_journey.py` — CLI demo for the extractor.
-- `scripts/extract_from_csv.py` — batch CSV -> JSONL extractor (writes `output/journeys.jsonl`).
-- `scripts/server.py` — minimal HTTP server that serves static demo and an API at `/api/journeys` with query params.
-- `public/journey_dashboard_demo.html` — small static dashboard UI that fetches the API and shows top/bottom journeys.
-- `scripts/start_server.sh`, `scripts/stop_server.sh`, `scripts/status_server.sh` — start/stop/status helper scripts.
-- `scripts/run_unit_tests.py` and `tests/test_journey_tools.py` — simple test runner + unit tests for extractor and LLM refinement (no pytest dependency required).
-- `deploy/tpad-server.service` + `deploy/README.md` — example systemd unit and deploy instructions.
-
-### Key features
-- Heuristic-first deterministic extraction to avoid hallucination: the extractor tries fast regex/key:value detection first.
-- Conservative fallback extraction captures short context spans when heuristics fail.
-- Optional LLM refinement helper: pass an `llm_predict(prompt)` callable to `extract_journey_info(text, llm_predict=...)` and the extractor will call the LLM only when confidence is low. The helper asks the model to return strict JSON and parses it back.
-- JSON output schema (returned as a JSON string):
-   - journey_id, score, reason, solution, confidence (heuristic|low|llm), and `score_numeric` (float or null).
-- Local API: `/api/journeys` supports query parameters: `top`, `bottom`, `limit`, `journey_id`, `min_confidence`.
-
-### Files changed / added (concise)
-- tools/journey_tools.py — extractor + optional LangChain wrapper + LLM helper + validation
-- tools/tools.py — the new extractor was registered in the `TOOLS` list so the agent can call it
-- scripts/demo_extract_journey.py — simple CLI demo
-- scripts/extract_from_csv.py — CSV -> `output/journeys.jsonl`
-- data/sample_journeys.csv — sample data used for the demo
-- output/journeys.jsonl — sample generated output (created by the extraction script)
-- public/journey_dashboard_demo.html — static visualization (fetches `/api/journeys?top=5`)
-- scripts/server.py — static server + `/api/journeys` with query support
-- scripts/start_server.sh, scripts/stop_server.sh, scripts/status_server.sh — process helpers
-- scripts/run_unit_tests.py — test runner (no pytest required)
-- tests/test_journey_tools.py — unit tests (heuristic, fallback, LLM mock, extractor+LLM)
-- deploy/tpad-server.service, deploy/README.md — systemd unit + instructions
-
-### Quick start (development)
-1. (Optional) Create and activate a virtualenv and install dependencies from `requirements.txt` if you need langchain/embeddings features.
-
-2. Run the CSV extraction to create demo JSONL:
+3) Direct extractor usage (CSV batch)
 
 ```bash
 python3 scripts/extract_from_csv.py data/sample_journeys.csv output/journeys.jsonl
 ```
 
-3. Start the demo server (adopts an existing server process if present):
+This runs `tools/journey_tools.extract_journey_info` on each CSV row and appends JSONL records to `output/journeys.jsonl` (each line contains the original `source_id` and the extracted `extracted` JSON object).
 
-```bash
-./scripts/start_server.sh
-```
+4) Using LLM refinement (programmatic example)
 
-4. View the demo in your browser:
-
-Open http://localhost:8000/ (the page at `public/journey_dashboard_demo.html` fetches `/api/journeys?top=5`)
-
-5. Stop the server:
-
-```bash
-./scripts/stop_server.sh
-```
-
-6. Check server status and tail logs:
-
-```bash
-./scripts/status_server.sh
-tail -f server.log
-```
-
-### API examples
-- Get top 5 journeys (highest score):
-
-```
-curl "http://localhost:8000/api/journeys?top=5"
-```
-
-- Get bottom 3 journeys (lowest score):
-
-```
-curl "http://localhost:8000/api/journeys?bottom=3"
-```
-
-- Filter by journey id:
-
-```
-curl "http://localhost:8000/api/journeys?journey_id=2002"
-```
-
-### Using LLM refinement (example)
-If you want the extractor to call an LLM when confidence is low, pass a callable that accepts a single prompt string and returns the model reply. Example (pseudocode):
+In Python, provide an `llm_predict` callable that sends a strict prompt to your LLM and returns its response text. Example pseudocode:
 
 ```python
 from tools.journey_tools import extract_journey_info
 
 def my_predict(prompt: str) -> str:
-      # call your ChatOpenAI/Azure client and return the reply string
+      # Use your chat client here (OpenAI/Azure/etc.) and return the reply text
       return chat_client.predict(prompt)
 
+text = "Some noisy log text mentioning JourneyId: 12345 and a score of -4.2 because of late arrival."
 json_str = extract_journey_info(text, llm_predict=my_predict)
 obj = json.loads(json_str)
 ```
 
-The extractor will only call the LLM when heuristics don't provide high confidence results.
+The helper `refine_extraction_with_llm` asks the LLM to return only valid JSON with the required keys. The extractor will attempt to parse any JSON object returned by the model.
+
+### Agent prompt guidance (how to craft the prompt)
+
+The agent's prompt focuses on producing structured, conservative decisions with citations. When creating or customizing the prompt (in `prompt_template.py` or `main.py`), prefer these rules:
+
+- Ask the agent to prefer deterministic evidence from the retrieved documents (cite chunk locations or snippet text) before applying heuristics.
+- Ask the agent to return a brief rationale and, if a structured JSON is requested, to emit a valid JSON object with only the required fields.
+- When expecting strict JSON, include an exact schema example and instruct the model to "Return only valid JSON and nothing else." This reduces hallucination.
+
+Example minimal strict prompt for the LLM refinement helper (used internally by `refine_extraction_with_llm`):
+
+"You are a precise extractor. Given the following text, extract exactly the fields 'journey_id', 'score', 'reason', 'solution'. Return only valid JSON with these keys (use null when unknown). Do not add any explanation."
 
 ### Tests
-- Run the bundled test runner (no pytest required):
+
+Run the small test runner for the extractor:
 
 ```bash
 python3 scripts/run_unit_tests.py
 ```
 
-All tests in `tests/test_journey_tools.py` validate heuristic extraction, fallback behavior, and the mocked LLM path.
+The tests validate heuristic extraction patterns, fallback behavior, and a mocked LLM path.
 
-### Deploy as systemd service (optional)
-See `deploy/README.md` for instructions. The example unit `deploy/tpad-server.service` shows a minimal unit file — edit the `User` and `WorkingDirectory` values for your environment before enabling.
+### Running the ingestion (optional, if you want RAG)
 
-### Next steps and ideas
-- Wire real AppIA data ingestion and run the extractor over the nightly batch output.
-- Expose more API filters (date ranges, score thresholds, confidence levels) and add authentication if exposing externally.
-- Integrate the extractor tool into your LangChain agent flow so the agent can call it and use structured results in dialogues.
-- Improve extraction coverage (multilingual patterns, richer heuristics) or use a strict JSON-output LLM refinement with schema validation.
+1. Put your documents (PDF/TXT) into `data/`.
+2. Run ingestion to populate the local Chroma store:
 
-If you want, I can now: (A) wire the extractor into your agent end-to-end with a real LLM call, (B) extend the dashboard UI with filters and CSV export, or (C) add CI (GitHub Actions) that runs the tests and a lint step on push.
+```bash
+python3 ingest.py --reset
+```
 
+The persistence directory is `chroma/` (excluded from git). The embeddings implementation is selected in `get_embedding_function.py`.
+
+### Where to look in the code
+
+- `tools/journey_tools.py` — deterministic extractor and LLM refinement helper.
+- `tools/rag_tools.py` — retrieval helper that queries the Chroma store.
+- `main.py` — agent factory (`get_agent`) and CLI entrypoint.
+- `scripts/rag_query.py` — programmatic runner that inputs a list of trains and writes structured outputs.
+
+### Next steps and suggestions
+
+- If you want production-ready behavior: add JSON schema validation for LLM outputs and unit tests that assert strict JSON shape across common documents.
+- Add CI to run `scripts/run_unit_tests.py` on push.
+- If you want the demo UI removed, archive `public/journey_dashboard_demo.html` and the `scripts/*.sh` helper scripts; otherwise keep them for demos.
+
+---
+
+If you'd like, I can now: (A) add a small README subsection that includes the exact agent prompt used by `scripts/rag_query.py` and `main.py`, (B) archive the demo/deploy files into an `archive/` directory, or (C) add JSON schema validation and tests for the extractor outputs. Tell me which you'd prefer and I'll proceed.
+- tests/test_journey_tools.py — unit tests (heuristic, fallback, LLM mock, extractor+LLM)
+
+- deploy/tpad-server.service, deploy/README.md — systemd unit + instructions

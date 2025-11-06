@@ -1,0 +1,11 @@
+RAG QUERY RESULT
+===============
+Best: journey_key=908 (load_factor=0.92)
+  Rationale: Highest load factor (0.92) among the provided journeys, indicating the best capacity utilization and likely strongest revenue performance per trip.
+
+Worst: journey_key=524 (load_factor=0.38)
+  Rationale: Lowest load factor (0.38) among the provided journeys, indicating the weakest capacity utilization and the greatest opportunity for pricing, scheduling, or marketing improvement.
+
+Citations:
+ - User-provided journey load factors: (742: 0.63, 151: 0.81, 309: 0.47, 908: 0.92, 524: 0.38)
+ - Load factor = seats sold / seats available, a standard metric for capacity utilization in revenue management.
