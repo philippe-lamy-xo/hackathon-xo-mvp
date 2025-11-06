@@ -19,4 +19,7 @@ pypdf==6.1.2
 # Utilities
 pydantic==2.12.3
 python-dotenv==1.1.1
+# Use a version that provides binary wheels for newer Python versions (3.11/3.12/3.13).
+# If your environment still forces a source build, install the system libpq headers (see README below).
+psycopg2-binary>=2.9.7,<3.0
  
