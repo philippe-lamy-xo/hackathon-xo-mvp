@@ -1,0 +1,94 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>TPAD - Journey Extractor Demo</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; padding: 20px; }
+    .container { display:flex; gap:24px }
+    .panel { flex:1; border:1px solid #ddd; padding:12px; border-radius:6px }
+    h2 { margin-top:0 }
+    .row { padding:8px 6px; border-bottom:1px solid #f0f0f0 }
+    .score { font-weight:700 }
+    .low { color:#b35 }
+  </style>
+</head>
+<body>
+  <h1>Train Performance Alerting Dashboard (demo)</h1>
+  <p>Shows top (best) and bottom (worst) journeys based on extracted score.</p>
+
+  <div class="container">
+    <div class="panel">
+      <h2>Top Journeys</h2>
+      <div id="top"></div>
+    </div>
+    <div class="panel">
+      <h2>Bottom Journeys</h2>
+      <div id="bottom"></div>
+    </div>
+  </div>
+
+  <script>
+    // Attempt to fetch the extracted records from the local API. If that fails,
+    // fall back to embedded sample data.
+    async function loadData() {
+      try {
+        const resp = await fetch('/api/journeys?top=5');
+        if (!resp.ok) throw new Error('no api');
+        const json = await resp.json();
+        // API returns array of {source_id, extracted}
+        return json.map(x => ({ source_id: x.source_id, extracted: x.extracted }));
+      } catch (e) {
+        console.warn('API fetch failed, using embedded sample', e);
+        return [
+          { source_id: '1', extracted: { journey_id: '1001', score: '1.2', reason: 'Improved turnaround.', solution: 'Keep procedure.', confidence: 'heuristic' } },
+          { source_id: '2', extracted: { journey_id: '2002', score: '2', reason: null, solution: 'We recommend changing staffing patterns to avoid recurrence', confidence: 'low' } },
+          { source_id: '3', extracted: { journey_id: null, score: null, reason: null, solution: null, confidence: 'low' } }
+        ];
+      }
+    }
+
+    function toNumber(s) {
+      if (s === null || s === undefined) return NaN;
+      const n = Number(s);
+      return isNaN(n) ? NaN : n;
+    }
+
+    (async function(){
+      const data = await loadData();
+      const enriched = data.map(d => ({
+        id: d.source_id,
+        journey_id: d.extracted.journey_id,
+        score: toNumber(d.extracted.score),
+        reason: d.extracted.reason,
+        solution: d.extracted.solution,
+        confidence: d.extracted.confidence
+      }));
+
+      const withScore = enriched.filter(x => !isNaN(x.score));
+      const noScore = enriched.filter(x => isNaN(x.score));
+
+      withScore.sort((a,b) => b.score - a.score);
+
+      const top = withScore.slice(0,5);
+      const bottom = withScore.slice(-5).reverse();
+
+      function renderList(elId, items) {
+        const container = document.getElementById(elId);
+        container.innerHTML = '';
+        items.forEach(it => {
+          const div = document.createElement('div');
+          div.className = 'row';
+          div.innerHTML = `<div><span class="score">${it.score}</span> — <strong>${it.journey_id || it.id}</strong> <span class="${it.confidence==='low'?'low':''}">(${it.confidence})</span></div>` +
+                          `<div style="font-size:0.9em;color:#444">Reason: ${it.reason||'—'}<br/>Solution: ${it.solution||'—'}</div>`;
+          container.appendChild(div);
+        });
+        if(items.length===0){ container.innerHTML = '<div style="padding:8px;color:#666">No items</div>'; }
+      }
+
+      renderList('top', top);
+      renderList('bottom', bottom);
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+[Unit]
+Description=TPAD Demo Server
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/home/ad.expretio.com/mohamed.oialili/git/rag-template
+ExecStart=/usr/bin/python3 /home/ad.expretio.com/mohamed.oialili/git/rag-template/scripts/server.py
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
