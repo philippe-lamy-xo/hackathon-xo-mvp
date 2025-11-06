@@ -1,0 +1,22 @@
+# LLM Library
+langchain==1.0.1
+langchain_community==0.4
+langchain-openai==1.0.1
+openai==2.6.0
+
+# Embeddings
+langchain-huggingface==1.0.0
+sentence-transformers==5.1.1
+
+# Vector Database
+chromadb==1.2.1
+langchain-chroma==1.0.0
+
+# Document Processing
+langchain-text-splitters==1.0.0
+pypdf==6.1.2
+
+# Utilities
+pydantic==2.12.3
+python-dotenv==1.1.1
+ 
